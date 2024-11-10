@@ -1,59 +1,43 @@
-var i = 0;
+async function startRecognition() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream);
+        let chunks = [];
 
-function speechToTextConversion() {
-    var SpeechRecognition = SpeechRecognition || webkitSpeechRecognition;
-    var SpeechRecognitionEvent = SpeechRecognitionEvent || webkitSpeechRecognitionEvent;
-    var recognition = new SpeechRecognition();
+        mediaRecorder.ondataavailable = function (event) {
+            chunks.push(event.data);
+        };
 
-    recognition.continuous = true;
-    recognition.lang = 'en-IN';
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
+        mediaRecorder.onstop = async function () {
+            const audioBlob = new Blob(chunks, { type: 'audio/wav' });
+            const audioUrl = URL.createObjectURL(audioBlob);
+            const formData = new FormData();
+            formData.append('file', audioBlob);
 
-    var diagnostic = document.getElementById('text');
+            const response = await fetch('https://speech.googleapis.com/v1/speech:recognize?key=YOUR_API_KEY', {
+                method: 'POST',
+                body: JSON.stringify({
+                    config: {
+                        encoding: 'LINEAR16',
+                        sampleRateHertz: 16000,
+                        languageCode: 'en-US',
+                    },
+                    audio: {
+                        uri: audioUrl,
+                    },
+                }),
+            });
 
-    document.getElementById("playButton").onclick = function () {
-        if (i == 0) {
-            document.getElementById("playButton").style.display = "none";
-            document.getElementById("recordButton").style.display = "inline";
-            recognition.start();
-            i = 1;
-        }
-        else {
-            document.getElementById("playButton").style.display = "inline";
-            document.getElementById("recordButton").style.display = "none";
-            recognition.stop();
-            i = 0;
-        }
+            const result = await response.json();
+            document.getElementById('text').value = result.results[0].alternatives[0].transcript;
+        };
+
+        mediaRecorder.start();
+        setTimeout(() => mediaRecorder.stop(), 5000); // Record for 5 seconds
+    } catch (error) {
+        console.error('Error occurred during recognition: ' + error);
+        document.getElementById('text').value = 'Error occurred during recognition: ' + error;
     }
+}
 
-    recognition.onstart = function() {
-        console.log('Speech recognition service has started');
-    };
-
-    recognition.onresult = function (event) {
-        var last = event.results.length - 1;
-        var convertedText = event.results[last][0].transcript;
-        diagnostic.value = convertedText;
-        console.log('Confidence: ' + event.results[0][0].confidence);
-    };
-
-    recognition.onnomatch = function (event) {
-        diagnostic.value = 'I did not recognise that.';
-    };
-
-    recognition.onerror = function (event) {
-        diagnostic.value = 'Error occurred in recognition: ' + event.error;
-        console.error('Error occurred in recognition: ' + event.error);
-    };
-
-    recognition.onspeechend = function() {
-        recognition.stop();
-        console.log('Speech recognition service disconnected');
-        document.getElementById("playButton").style.display = "inline";
-        document.getElementById("recordButton").style.display = "none";
-        i = 0;
-    };
-};
-
-window.onload = speechToTextConversion;
+document.getElementById('startButton').addEventListener('click', startRecognition);
